@@ -120,7 +120,6 @@ class audio:
         return None
 
 
-
 if __name__ == "__main__":
     _audio_samples = audio.read_wav()
     _packaged_aud = audio.cut_package(_audio_samples)
