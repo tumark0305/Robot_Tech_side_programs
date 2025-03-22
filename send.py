@@ -1,0 +1,69 @@
+import socket,time
+import os,cv2
+from tqdm import tqdm,trange
+import numpy as np
+import struct
+process_file = "avem_test3"
+esp32_ip = "192.168.4.1"
+port = 80
+output_video = f"{os.getcwd()}\\output\\{process_file}_vid.txt"
+output_audio = f"{os.getcwd()}\\output\\{process_file}_aud.txt"
+def reverse_bits(n, bit_length=8):
+    return int(f'{n:08b}'[::-1], 2) 
+def read_video():
+    _f = open(output_video,'r')
+    _data = _f.read()
+    _f.close()
+    _output = [bytes([reverse_bits(int(_y)) for _y in _x.split("-")]) for _x in _data.split('+')]
+    return _output
+def read_audio():
+    _f = open(output_audio,'r')
+    _data = _f.read()
+    _f.close()
+    _output = [bytes([int(_y) for _y in _x.split("-")]) for _x in _data.split('+')]
+    return _output
+def local_show(_video_frame):
+    image_data_view = []
+    image_row = []
+    counter = 0
+    for _bytes in _video_frame:
+        for bit in range(8):
+            image_row.append(255 if (_bytes >> (bit)) & 1 else 0)
+            counter += 1
+            if counter>=128:
+                counter = 0
+                image_data_view.append(image_row)
+                image_row = []
+                    
+    image_data = np.array(image_data_view, dtype=np.uint8)
+    resized_image = cv2.resize(image_data, (image_data.shape[1]*10, image_data.shape[0]*10), interpolation=cv2.INTER_NEAREST)
+    cv2.imshow("Video Frame", resized_image)
+    cv2.waitKey(60)
+    return None
+def send_to_esp32(_video_data , _audio_data):
+    for _idx in trange(len(_video_data)):
+        _frame_data = _video_data[_idx] + _audio_data[_idx]
+        #_data = _video_data[_idx]
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((esp32_ip, port))
+        while True:
+            _data = 'NA'
+            _data = s.recv(1024).decode()
+            if _data == 'n':
+                s.sendall(_frame_data)
+                s.close()
+                break
+            else:
+                time.sleep(0.03)
+                continue
+        #local_show(_video_frame)
+        time.sleep(0.05)
+    return None
+
+if __name__ == "__main__":
+    _video_data = read_video()
+    _audio_data = read_audio()
+    for i in range(999999):
+        send_to_esp32(_video_data , _audio_data)
+    print("finished ")
+    
