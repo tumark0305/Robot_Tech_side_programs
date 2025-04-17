@@ -3,6 +3,7 @@ import os,cv2
 from tqdm import tqdm,trange
 import numpy as np
 import struct
+import pyautogui
 process_file = "avem_test3"
 esp32_ip = "192.168.4.1"
 port = 80
@@ -59,11 +60,52 @@ def send_to_esp32(_video_data , _audio_data):
         #local_show(_video_frame)
         time.sleep(0.05)
     return None
+def screenshot_TFT():
+    def rgb888_to_rgb565(image):
+        r = (image[:, :, 0] >> 3).astype(np.uint16)
+        g = (image[:, :, 1] >> 2).astype(np.uint16)
+        b = (image[:, :, 2] >> 3).astype(np.uint16)
+        return (r << 11) | (g << 5) | b
+    screenshot = pyautogui.screenshot()
+    frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+    target_width = 2560
+    target_height = 1440
+    h, w, _ = frame.shape
+    left = (w - target_width) // 2
+    top = (h - target_height) // 2
+    cropped = frame[top:top+target_height, left:left+target_width]
+    flipped = cv2.flip(cropped, 1)
+    resized = cv2.resize(flipped, (128, 160), interpolation=cv2.INTER_AREA)
+    rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    rgb565_image = rgb888_to_rgb565(rgb_image)
+    rgb565_flat = rgb565_image.flatten()
+    return rgb565_flat
+def screenshot_toesp32():
+    while True:
+        frame_data = screenshot_TFT()
+        frame_bytes = frame_data.tobytes()  # 轉為 bytes
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(3)  
+            s.connect((esp32_ip, port))
+            while True:
+                try:
+                    received = s.recv(1024).decode()
+                    if received.strip() == 'n':
+                        s.sendall(frame_bytes)
+                        s.close()
+                        break
+                    else:
+                        time.sleep(0.03)
+                except socket.timeout:
+                    print("Timeout 等待 ESP32 回應")
+                    s.close()
+                    break
+        except Exception as e:
+            print(f"連線錯誤：{e}")
+        time.sleep(0.05)
+    return None
 
 if __name__ == "__main__":
-    _video_data = read_video()
-    _audio_data = read_audio()
-    for i in range(999999):
-        send_to_esp32(_video_data , _audio_data)
-    print("finished ")
+    screenshot_toesp32()
     
