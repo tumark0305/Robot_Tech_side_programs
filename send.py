@@ -74,8 +74,9 @@ def screenshot_TFT():
     left = (w - target_width) // 2
     top = (h - target_height) // 2
     cropped = frame[top:top+target_height, left:left+target_width]
-    flipped = cv2.flip(cropped, 1)
-    resized = cv2.resize(flipped, (128, 160), interpolation=cv2.INTER_AREA)
+    rotated = cv2.rotate(cropped, cv2.ROTATE_90_CLOCKWISE)
+
+    resized = cv2.resize(rotated, (128, 160), interpolation=cv2.INTER_AREA)
     rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     rgb565_image = rgb888_to_rgb565(rgb_image)
     rgb565_flat = rgb565_image.flatten()
