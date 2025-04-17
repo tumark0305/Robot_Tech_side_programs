@@ -68,8 +68,8 @@ def screenshot_TFT():
         return (r << 11) | (g << 5) | b
     screenshot = pyautogui.screenshot()
     frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-    target_width = 2560
-    target_height = 1440
+    target_width = 1920
+    target_height = 1080
     h, w, _ = frame.shape
     left = (w - target_width) // 2
     top = (h - target_height) // 2
@@ -83,7 +83,7 @@ def screenshot_TFT():
 def screenshot_toesp32():
     while True:
         frame_data = screenshot_TFT()
-        frame_bytes = frame_data.tobytes()  # 轉為 bytes
+        frame_bytes = frame_data.tobytes()  
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(3)  
@@ -94,15 +94,17 @@ def screenshot_toesp32():
                     if received.strip() == 'n':
                         s.sendall(frame_bytes)
                         s.close()
+                        print("graph sent")
+                        time.sleep(1)
                         break
                     else:
                         time.sleep(0.03)
                 except socket.timeout:
-                    print("Timeout 等待 ESP32 回應")
+                    print("Timeout ESP32")
                     s.close()
                     break
         except Exception as e:
-            print(f"連線錯誤：{e}")
+            print(f"{e}")
         time.sleep(0.05)
     return None
 
