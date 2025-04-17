@@ -96,7 +96,6 @@ def screenshot_toesp32():
                         s.sendall(frame_bytes)
                         s.close()
                         print("graph sent")
-                        time.sleep(1)
                         break
                     else:
                         time.sleep(0.03)
