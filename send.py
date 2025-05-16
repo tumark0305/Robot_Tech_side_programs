@@ -135,6 +135,33 @@ def randombyte_toesp32():
         time.sleep(0.05)
     return None
 
+def send_byte_toesp32():
+    while True:
+        frame_bytes = bytes([1])
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(3)  
+            s.connect((esp32_ip, port))
+            while True:
+                try:
+                    received = s.recv(1024).decode()
+                    if received.strip() == 'n':
+                        s.sendall(frame_bytes)
+                        s.close()
+                        print("graph sent")
+                        time.sleep(1)
+                        break
+                    else:
+                        time.sleep(0.03)
+                except socket.timeout:
+                    print("Timeout ESP32")
+                    s.close()
+                    break
+        except Exception as e:
+            print(f"{e}")
+        time.sleep(0.05)
+    return None
+
 if __name__ == "__main__":
     randombyte_toesp32()
     
