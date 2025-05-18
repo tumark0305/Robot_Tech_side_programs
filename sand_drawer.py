@@ -9,14 +9,25 @@ esp32_ip = "192.168.4.1"
 port = 80
 
 class sand_drawer:
+    send_length = 2048
+    motor_count = 2
     def __init__(self):
-        self.data = [np.array([10,20,-30,40,-50,60,-70,80,-90,100,110],dtype=np.int32)]
+        self.data = [
+            ([10, 20, -30, 40, -50, 60, -70, 80, -90, 100, 110],
+             [10, 20, -30, 40, -50, 60, -70, 80, -90, 100, 110])
+        ]
+        self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         self.iterator = 0
+    @staticmethod
+    def to_send(axisdata: list[int], armdata: list[int]):
+        axis = axisdata + [0] * (sand_drawer.send_length - 1 - len(axisdata))
+        arm  = armdata + [0] * (sand_drawer.send_length - 1 - len(armdata))
+        combined = axis + arm
+        return np.array(combined, dtype=np.int32).tobytes()
 
     def send(self):
         while self.iterator<len(self.data):
-            frame_data = self.data[self.iterator]
-            frame_bytes = frame_data.tobytes()  
+            frame_bytes = self.send_data[self.iterator] 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(3)  
