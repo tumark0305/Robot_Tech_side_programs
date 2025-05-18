@@ -24,7 +24,6 @@ class sand_drawer:
         arm  = armdata + [0] * (sand_drawer.send_length  - len(armdata))
         combined = axis + arm
         return np.array(combined, dtype=np.int32).tobytes()
-
     def send(self):
         while self.iterator<len(self.data):
             frame_bytes = self.send_data[self.iterator] 
