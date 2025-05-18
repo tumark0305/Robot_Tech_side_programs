@@ -107,7 +107,34 @@ def screenshot_toesp32():
             print(f"{e}")
         time.sleep(0.05)
     return None
+def randombyte_toesp32():
+    while True:
+        frame_data = screenshot_TFT()
+        frame_bytes = frame_data.tobytes()  
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(3)  
+            s.connect((esp32_ip, port))
+            while True:
+                try:
+                    received = s.recv(1024).decode()
+                    if received.strip() == 'n':
+                        s.sendall(frame_bytes)
+                        s.close()
+                        print("byte sent")
+                        time.sleep(1)
+                        break
+                    else:
+                        time.sleep(0.03)
+                except socket.timeout:
+                    print("Timeout ESP32")
+                    s.close()
+                    break
+        except Exception as e:
+            print(f"{e}")
+        time.sleep(0.05)
+    return None
 
 if __name__ == "__main__":
-    screenshot_toesp32()
+    randombyte_toesp32()
     
