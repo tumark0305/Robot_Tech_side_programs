@@ -13,8 +13,8 @@ class sand_drawer:
     motor_count = 2
     def __init__(self):
         self.data = [
-            ([10, 20, -30, 40, -50, 60, -70, 80, -90, 100, 110],
-             [10, 20, -30, 40, -50, 60, -70, 80, -90, 100, 110])
+            ([10, 200, -30, 40, -50, 60, -70, 80, -90, 100, 110],
+             [10, 200, -30, 40, -50, 60, -70, 80, -90, 100, 110])
         ]
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         self.iterator = 0
