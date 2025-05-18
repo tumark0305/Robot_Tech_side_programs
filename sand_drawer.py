@@ -20,8 +20,8 @@ class sand_drawer:
         self.iterator = 0
     @staticmethod
     def to_send(axisdata: list[int], armdata: list[int]):
-        axis = axisdata + [0] * (sand_drawer.send_length - 1 - len(axisdata))
-        arm  = armdata + [0] * (sand_drawer.send_length - 1 - len(armdata))
+        axis = axisdata + [0] * (sand_drawer.send_length - len(axisdata))
+        arm  = armdata + [0] * (sand_drawer.send_length  - len(armdata))
         combined = axis + arm
         return np.array(combined, dtype=np.int32).tobytes()
 
