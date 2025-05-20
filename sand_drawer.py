@@ -4,9 +4,89 @@ from tqdm import tqdm,trange
 import numpy as np
 import struct
 import pyautogui
+import sympy as sp
 
 esp32_ip = "192.168.4.1"
 port = 80
+
+class coordinate:
+    arm_length = 1000
+    axis_length = 1000
+    def __init__(self):
+        self.t = sp.symbols('t', real=True)
+        self.x = 0
+        self.y = 0
+        self.sol1 = None
+        self.sol2 = None
+
+    def inverse_kinematics_all(x, y):
+        L1 = 1000
+        L2 = 1000
+        D = np.hypot(x, y)
+
+        if D > (L1 + L2):
+            return None  # 點超出工作範圍
+
+        cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
+        cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
+
+        # === 第一組解（彎肘）
+        angle2_1 = np.arccos(cos_angle2)
+        k1 = L1 + L2 * np.cos(angle2_1)
+        k2 = L2 * np.sin(angle2_1)
+        angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
+
+        # === 第二組解（伸肘）
+        angle2_2 = -angle2_1
+        k1 = L1 + L2 * np.cos(angle2_2)
+        k2 = L2 * np.sin(angle2_2)
+        angle1_2 = np.arctan2(y, x) - np.arctan2(k2, k1)
+
+        return np.array([[angle1_1, angle2_1], [angle1_2, angle2_2]])
+    def gen_function(self):
+        L1 = self.axis_length
+        L2 = self.arm_length
+        x = self.x
+        y = self.x
+        D2 = x**2 + y**2
+        cos_theta2 = (D2 - L1**2 - L2**2) / (2 * L1 * L2)
+        theta2_down = sp.acos(cos_theta2)       # 彎肘
+        theta2_up   = -sp.acos(cos_theta2)      # 伸肘
+        k1_down = L1 + L2 * sp.cos(theta2_down)
+        k2_down = L2 * sp.sin(theta2_down)
+        theta1_down = sp.atan2(y, x) - sp.atan2(k2_down, k1_down)
+
+        k1_up = L1 + L2 * sp.cos(theta2_up)
+        k2_up = L2 * sp.sin(theta2_up)
+        theta1_up = sp.atan2(y, x) - sp.atan2(k2_up, k1_up)
+
+        self.sol1 = (sp.simplify(theta1_down),sp.simplify(theta2_down))
+        self.sol2 = (sp.simplify(theta1_up),sp.simplify(theta2_up))
+
+        sp.pprint(self.sol1[0], use_unicode=True)
+        sp.pprint(self.sol1[1], use_unicode=True)
+        sp.pprint(self.sol2[0],   use_unicode=True)
+        sp.pprint(self.sol2[1],   use_unicode=True)
+
+        return None
+    def convert(self,two_pin):
+        start_sol = coordinate.inverse_kinematics_all(two_pin[0][0],two_pin[0][1]) * 1000 / np.pi
+        end_sol = coordinate.inverse_kinematics_all(two_pin[1][0],two_pin[1][1]) * 1000 / np.pi
+        quene = [(start_sol[0],end_sol[0]),(start_sol[0],end_sol[1]),(start_sol[1],end_sol[0]),(start_sol[1],end_sol[1])]
+        for start_point,end_point in quene:
+            theta1_end = int(max(start_point[0] , end_point[0]))
+            theta2_end = int(max(start_point[1] , end_point[1]))
+            theta1_start = int(min(start_point[0] , end_point[0]))
+            theta2_start = int(min(start_point[1] , end_point[1]))
+            theta1_time_step = range(theta1_start , theta1_end)
+            theta2_time_step = range(theta2_start , theta2_end)
+            for time1 in range(theta1_start , theta1_end):
+                eq = sp.Eq(self.sol1[0], time1)
+                sol = sp.solve(eq, self.t)
+                pass#解出每個theta12_time_step的時間戳存成序列
+
+
+        return None
 
 class sand_drawer:
     arm_length = [90,90]
@@ -71,43 +151,36 @@ class sand_drawer:
         self.image = np.where(mask[:, :, None] == 255, self.image, white_bg)
         return None
     def convert(self):
+        calculator = coordinate()
+        calculator.x = calculator.t
+        calculator.gen_function()
         self.data = []
-        def inverse_kinematics(x, y):
+        def inverse_kinematics_all(x, y):
             L1 = 1000
             L2 = 1000
             D = np.hypot(x, y)
-    
-            if D > (L1 + L2): return None  # 點超出範圍
+
+            if D > (L1 + L2):
+                return None  # 點超出工作範圍
 
             cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
-            angle2 = np.arccos(np.clip(cos_angle2, -1.0, 1.0))
+            cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
 
-            k1 = L1 + L2 * np.cos(angle2)
-            k2 = L2 * np.sin(angle2)
-            angle1 = np.arctan2(y, x) - np.arctan2(k2, k1)
+            # === 第一組解（彎肘）
+            angle2_1 = np.arccos(cos_angle2)
+            k1 = L1 + L2 * np.cos(angle2_1)
+            k2 = L2 * np.sin(angle2_1)
+            angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
 
-            return np.array([angle1, angle2])
+            # === 第二組解（伸肘）
+            angle2_2 = -angle2_1
+            k1 = L1 + L2 * np.cos(angle2_2)
+            k2 = L2 * np.sin(angle2_2)
+            angle1_2 = np.arctan2(y, x) - np.arctan2(k2, k1)
+
+            return np.array([[angle1_1, angle2_1], [angle1_2, angle2_2]])
         for lines in self.lines:
-            resolution = sand_drawer.send_length -1
-            discrete_line = np.linspace(lines[0],lines[1],resolution)
-            theta = []
-            for ds in discrete_line:
-                dtheta = inverse_kinematics(ds[0], ds[1])
-                theta.append(np.round(dtheta* 1000 / np.pi) )
-            theta_axis,theta_arm = [len(theta)],[len(theta)]
-            current_point = theta[0]
-            for next_point in theta:
-                vector = next_point - current_point
-                if vector[0] >=0:
-                    theta_axis.append(int(vector[0]))
-                else:
-                    theta_axis.append(-int(vector[0]))
-                if vector[1] >=0:
-                    theta_arm.append(int(vector[1]))
-                else:
-                    theta_arm.append(-int(vector[1]))
-                current_point = next_point
-            self.data.append((theta_axis , theta_arm))
+            calculator.convert(lines)
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
