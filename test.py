@@ -18,3 +18,12 @@ t_min_candidates = sp.solve(dD_dt, t)
 t_min_real = [tt.evalf() for tt in t_min_candidates if tt.is_real]
 
 print("最短距離發生時間 t：", t_min_real)
+
+# 計算最小距離平方值
+min_dist_squared = min([D2.subs(t, tt).evalf() for tt in t_min_real])
+
+# 真正距離（平方根）
+min_distance = sp.sqrt(min_dist_squared).evalf()
+
+print("最短距離長度：", min_distance)
+
