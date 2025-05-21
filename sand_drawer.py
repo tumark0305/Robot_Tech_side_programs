@@ -101,8 +101,8 @@ class sand_drawer:
         self.circle_border()
         self.lines = []
         self.data = [
-            ([10, 200, -30, 40, -50, 60, -70, 80, -90, 100, 110],
-             [10, 200, -30, 40, -50, 60, -70, 80, -90, 100, 110])
+            ([2000] + [20000]*2000,
+             [2000] + [-20000]*2000)
         ]
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         self.iterator = 0
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     graph.get_line()
     #graph.find_path()
     graph.preview()
-    graph.convert()
+    #graph.convert()
     
     graph.send()
 
