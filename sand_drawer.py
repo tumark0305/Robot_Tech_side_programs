@@ -5,6 +5,7 @@ import numpy as np
 import struct
 import pyautogui
 import sympy as sp
+from math import cos, sin
 
 esp32_ip = "192.168.4.1"
 port = 80
@@ -18,6 +19,7 @@ class coordinate:
         self.y = 0
         self.sol1 = None
         self.sol2 = None
+        self.tf = None
 
     def inverse_kinematics_all(x, y):
         L1 = 1000
@@ -25,24 +27,24 @@ class coordinate:
         D = np.hypot(x, y)
 
         if D > (L1 + L2):
-            return None  # ÂI¶W¥X¤u§@½d³ò
+            return None  
 
         cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
         cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
-
-        # === ²Ä¤@²Õ¸Ñ¡]Ås¨y¡^
         angle2_1 = np.arccos(cos_angle2)
         k1 = L1 + L2 * np.cos(angle2_1)
         k2 = L2 * np.sin(angle2_1)
         angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
-
-        # === ²Ä¤G²Õ¸Ñ¡]¦ù¨y¡^
         angle2_2 = -angle2_1
         k1 = L1 + L2 * np.cos(angle2_2)
         k2 = L2 * np.sin(angle2_2)
         angle1_2 = np.arctan2(y, x) - np.arctan2(k2, k1)
 
         return np.array([[angle1_1, angle2_1], [angle1_2, angle2_2]])
+    def kinematics(theta1,theta2):
+        x = coordinate.axis_length * cos(theta1) + coordinate.arm_length * cos(theta2)
+        y = coordinate.axis_length * sin(theta1) + coordinate.arm_length * sin(theta2)
+        return x,y
     def gen_function(self):
         L1 = self.axis_length
         L2 = self.arm_length
@@ -50,8 +52,8 @@ class coordinate:
         y = self.x
         D2 = x**2 + y**2
         cos_theta2 = (D2 - L1**2 - L2**2) / (2 * L1 * L2)
-        theta2_down = sp.acos(cos_theta2)       # Ås¨y
-        theta2_up   = -sp.acos(cos_theta2)      # ¦ù¨y
+        theta2_down = sp.acos(cos_theta2)       
+        theta2_up   = -sp.acos(cos_theta2)    
         k1_down = L1 + L2 * sp.cos(theta2_down)
         k2_down = L2 * sp.sin(theta2_down)
         theta1_down = sp.atan2(y, x) - sp.atan2(k2_down, k1_down)
@@ -67,7 +69,6 @@ class coordinate:
         sp.pprint(self.sol1[1], use_unicode=True)
         sp.pprint(self.sol2[0],   use_unicode=True)
         sp.pprint(self.sol2[1],   use_unicode=True)
-
         return None
     def convert(self,two_pin):
         start_sol = coordinate.inverse_kinematics_all(two_pin[0][0],two_pin[0][1]) * 1000 / np.pi
@@ -83,7 +84,7 @@ class coordinate:
             for time1 in range(theta1_start , theta1_end):
                 eq = sp.Eq(self.sol1[0], time1)
                 sol = sp.solve(eq, self.t)
-                pass#¸Ñ¥X¨C­Ótheta12_time_stepªº®É¶¡ÂW¦s¦¨§Ç¦C
+                pass
 
 
         return None
@@ -93,7 +94,7 @@ class sand_drawer:
     max_step = 2000
     send_length = 2048
     motor_count = 2
-    epsilon=1.0 # epsilon ¶V¤p¶Vºë²Ó
+    epsilon=1.0 # epsilon ï¿½Vï¿½pï¿½Vï¿½ï¿½ï¿½
     image_size = 1024
     def __init__(self , _image_path:str):
         self.image = cv2.resize(cv2.imread(f"{os.getcwd()}/input/{_image_path}"), (sand_drawer.image_size, sand_drawer.image_size), interpolation=cv2.INTER_NEAREST)
@@ -161,18 +162,18 @@ class sand_drawer:
             D = np.hypot(x, y)
 
             if D > (L1 + L2):
-                return None  # ÂI¶W¥X¤u§@½d³ò
+                return None  # ï¿½Iï¿½Wï¿½Xï¿½uï¿½@ï¿½dï¿½ï¿½
 
             cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
             cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
 
-            # === ²Ä¤@²Õ¸Ñ¡]Ås¨y¡^
+            # === ï¿½Ä¤@ï¿½Õ¸Ñ¡]ï¿½sï¿½yï¿½^
             angle2_1 = np.arccos(cos_angle2)
             k1 = L1 + L2 * np.cos(angle2_1)
             k2 = L2 * np.sin(angle2_1)
             angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
 
-            # === ²Ä¤G²Õ¸Ñ¡]¦ù¨y¡^
+            # === ï¿½Ä¤Gï¿½Õ¸Ñ¡]ï¿½ï¿½ï¿½yï¿½^
             angle2_2 = -angle2_1
             k1 = L1 + L2 * np.cos(angle2_2)
             k2 = L2 * np.sin(angle2_2)
@@ -216,7 +217,7 @@ class sand_drawer:
             def dist(p1, p2):
                 return np.linalg.norm(np.array(p1) - np.array(p2))
 
-            # ±N½ü¹øÂà¬°½u¬q¦Cªí
+            # ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½à¬°ï¿½uï¿½qï¿½Cï¿½ï¿½
             segments = []
             for cnt in contours:
                 pts = [tuple(p[0]) for p in cnt]
@@ -226,7 +227,7 @@ class sand_drawer:
             visited = [False] * len(segments)
             path = []
 
-            # §ä¨ì³Ì¾aªñ¤¤¤ßªº½u¬q§@¬°°_ÂI
+            # ï¿½ï¿½ï¿½Ì¾aï¿½ñ¤¤¤ßªï¿½ï¿½uï¿½qï¿½@ï¿½ï¿½ï¿½_ï¿½I
             image_center = np.array([self.image.shape[1] / 2, self.image.shape[0] / 2])
             min_dist = float('inf')
             current_idx = 0
@@ -263,13 +264,13 @@ class sand_drawer:
                         best_reverse = True
                         best_distance = d2
 
-                # ´¡¤J¸É½u¬q
+                # ï¿½ï¿½ï¿½Jï¿½É½uï¿½q
                 next_seg = segments[best_idx]
                 next_start = next_seg[1] if best_reverse else next_seg[0]
                 if dist(current_tail, next_start) > 0:
                     path.append([current_tail, next_start])
 
-                # ±µ¤W¤U¤@¬q
+                # ï¿½ï¿½ï¿½Wï¿½Uï¿½@ï¿½q
                 if best_reverse:
                     path.append([next_seg[1], next_seg[0]])
                     current_tail = next_seg[0]
