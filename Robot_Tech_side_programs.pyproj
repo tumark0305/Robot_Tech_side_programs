@@ -27,6 +27,7 @@
   <ItemGroup>
     <Compile Include="convert.py" />
     <Compile Include="sand_drawer.py" />
+    <Compile Include="sand_drawer_simulation.py" />
     <Compile Include="send.py" />
   </ItemGroup>
   <ItemGroup>

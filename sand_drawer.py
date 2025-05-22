@@ -1,5 +1,5 @@
 import socket,time
-import os,cv2
+import os,cv2,math
 from tkinter import Y
 from tqdm import tqdm,trange
 import numpy as np
@@ -9,189 +9,49 @@ import sympy as sp
 from math import cos, sin
 from scipy.optimize import minimize_scalar
 from sympy import lambdify
+from copy import deepcopy
 
 esp32_ip = "192.168.4.1"
 port = 80
 
-class coordinate:
-    arm_length = 1000
-    axis_length = 1000
-    velocity = 100 #pixel/s
-    def __init__(self , current_sol:int):
-        self.current_sol = current_sol
-        self.t = sp.symbols('t', real=True)
-        self.x = 0
-        self.y = 0
-        self.sol1 = None
-        self.sol2 = None
-        self.tf = None
-        self.output = None
+LENGTH = 1000
+STEP_PER_ROUND = 2000
 
-    def inverse_kinematics_all(x, y):
-        L1 = 1000
-        L2 = 1000
-        D = np.hypot(x, y)
+class stepper_helper:
+    length = LENGTH
+    max_step = STEP_PER_ROUND
+    def __init__(self , initial_pos):
+        self.position = initial_pos
+        self.run_time = 0
+        self.output = []
+    def coordinate(self):
+        theta = self.position /(self.max_step//2) * np.pi
+        output = [self.length * cos(theta) , self.length * sin(theta)]
+        return np.array(output)
+    def __add__(self,other):
+        if not isinstance(other, stepper_helper):
+            return NotImplemented
+        return self.coordinate() + other.coordinate()
+    def move(self , time_step:int):
+        if time_step != 0:
+            self.run_time += abs(time_step)
+            self.output.append(time_step)
+            if time_step<0:
+                self.position -= 1
+            else:
+                self.position += 1
 
-        if D > (L1 + L2):
-            return None  
-
-        cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
-        cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
-        angle2_1 = np.arccos(cos_angle2)
-        k1 = L1 + L2 * np.cos(angle2_1)
-        k2 = L2 * np.sin(angle2_1)
-        angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
-        angle2_2 = -angle2_1
-        k1 = L1 + L2 * np.cos(angle2_2)
-        k2 = L2 * np.sin(angle2_2)
-        angle1_2 = np.arctan2(y, x) - np.arctan2(k2, k1)
-
-        return np.array([[angle1_1, angle2_1], [angle1_2, angle2_2]])
-    def kinematics(theta1,theta2):
-        theta1 = theta1 * np.pi / 1000
-        theta2 = theta2 * np.pi / 1000
-        x = coordinate.axis_length * cos(theta1) + coordinate.arm_length * cos(theta2)
-        y = coordinate.axis_length * sin(theta1) + coordinate.arm_length * sin(theta2)
-        return np.array([x,y])
-    def gen_function(self):
-        L1 = self.axis_length
-        L2 = self.arm_length
-        x = self.x
-        y = self.x
-        D2 = x**2 + y**2
-        cos_theta2 = (D2 - L1**2 - L2**2) / (2 * L1 * L2)
-        theta2_down = sp.acos(cos_theta2)       
-        theta2_up   = -sp.acos(cos_theta2)    
-        k1_down = L1 + L2 * sp.cos(theta2_down)
-        k2_down = L2 * sp.sin(theta2_down)
-        theta1_down = sp.atan2(y, x) - sp.atan2(k2_down, k1_down)
-
-        k1_up = L1 + L2 * sp.cos(theta2_up)
-        k2_up = L2 * sp.sin(theta2_up)
-        theta1_up = sp.atan2(y, x) - sp.atan2(k2_up, k1_up)
-
-        self.sol1 = (sp.simplify(theta1_down),sp.simplify(theta2_down))
-        self.sol2 = (sp.simplify(theta1_up),sp.simplify(theta2_up))
-
-        sp.pprint(self.sol1[0], use_unicode=True)
-        sp.pprint(self.sol1[1], use_unicode=True)
-        sp.pprint(self.sol2[0],   use_unicode=True)
-        sp.pprint(self.sol2[1],   use_unicode=True)
-        return None
-    def convert(self,two_pin):
-        p1 = np.array(two_pin[0])
-        p2 = np.array(two_pin[1])
-        distance = np.linalg.norm(p1 - p2)
-        x1 = (two_pin[0][0] - two_pin[1][0]) / (distance * self.velocity)
-        x2 = two_pin[0][0]
-        y1 = (two_pin[0][1] - two_pin[1][1]) / (distance * self.velocity)
-        y2 = two_pin[0][1]
-        def clostest_time(pointx,pointy):
-            t = sp.Symbol('t', real=True)
-            x_t = self.t * x1 + x2
-            y_t = self.t * y1 + y2
-            D2 = (x_t - pointx)**2 + (y_t - pointy)**2
-            dD_dt = sp.diff(D2, t)
-            t_min_candidates = sp.solve(dD_dt, t)
-            t_min_real = [tt.evalf() for tt in t_min_candidates if tt.is_real]
-            min_dist_squared = min([D2.subs(t, tt).evalf() for tt in t_min_real])
-            min_distance = sp.sqrt(min_dist_squared).evalf()
-            return t_min_real[0],min_distance
-        def clostest_time_faster(pointx,pointy):
-            t = sp.Symbol('t', real=True)
-            x_t = self.x
-            y_t = self.y
-            D2 = (x_t - pointx)**2 + (y_t - pointy)**2
-            D2_func = lambdify(t, D2, modules='numpy')
-            res = minimize_scalar(D2_func, bounds=(0, 1), method='bounded')
-            t_best = res.x
-            d_best = np.sqrt(res.fun)
-            return t_best, d_best
-        def gen_time_step(start_point,end_point):
-            theta1_dir = 1 if end_point[0] >= start_point[0] else -1
-            theta2_dir = 1 if end_point[1] >= start_point[1] else -1
-            theta1_step = np.arange(
-                int(start_point[0]),
-                int(end_point[0]) + theta1_dir,
-                theta1_dir
-            )
-
-            theta2_step = np.arange(
-                int(start_point[1]),
-                int(end_point[1]) + theta2_dir,
-                theta2_dir
-            )
-            iter1 = 0
-            iter2 = 0
-            theta1_time_step = []
-            theta2_time_step = []
-            pbar = tqdm(total=len(theta1_step) + len(theta2_step), desc="Planning")
-            while (iter1<len(theta1_step) or iter2<len(theta2_step))and not (iter1==len(theta1_step)-1 and iter2==len(theta2_step)-1):
-                pbar.update(1)
-                who_added = []
-                possible_point = []
-                if iter1 + 1<len(theta1_step) :
-                    possible_point.append(coordinate.kinematics(theta1_step[iter1 + 1],theta2_step[iter2]))
-                    who_added.append("theta1")
-                if iter2 + 1<len(theta2_step) :
-                    possible_point.append(coordinate.kinematics(theta1_step[iter1],theta2_step[iter2 + 1]))
-                    who_added.append("theta2")
-                if iter1 + 1<len(theta1_step) and iter2 + 1<len(theta2_step) :
-                    possible_point.append(coordinate.kinematics(theta1_step[iter1 + 1],theta2_step[iter2 + 1]))
-                    who_added.append("both")
-                error_distance = []
-                error_t = []
-                for real_coordinate in possible_point:
-                    error = clostest_time(real_coordinate[0],real_coordinate[1])
-                    error_t.append(error[0])
-                    error_distance.append(error[1])
-                min_index = error_distance.index(min(error_distance))
-                if who_added[min_index] == "theta1":
-                    theta1_time_step.append(theta1_dir * abs(error_t[min_index]))
-                    iter1 += 1
-                    continue
-                elif who_added[min_index] == "theta2":
-                    theta2_time_step.append(theta2_dir * abs(error_t[min_index]))
-                    iter2 += 1
-                    continue
-                elif who_added[min_index] == "both":
-                    theta1_time_step.append(theta1_dir * abs(error_t[min_index]))
-                    theta2_time_step.append(theta2_dir * abs(error_t[min_index]))
-                    iter1 += 1
-                    iter2 += 1
-                    continue
-            return np.array(theta1_time_step),np.array(theta2_time_step)
-        start_sol = coordinate.inverse_kinematics_all(two_pin[0][0],two_pin[0][1])[self.current_sol] * 1000 / np.pi
-        end_sol = coordinate.inverse_kinematics_all(two_pin[1][0],two_pin[1][1]) * 1000 / np.pi
-        quene = [(start_sol,end_sol[0]),(start_sol,end_sol[1])]
-        _all_step = []
-        for start_point,end_point in quene:
-            if abs(start_point[0] - end_point[0]) >= 2047 or abs(start_point[1] - end_point[1]) >= 2047:
-                continue
-            _all_step.append(gen_time_step(start_point,end_point))
-        best_step = []
-        min_length = np.inf
-        best_index = 0
-        for i,select in enumerate(_all_step):
-            length = len(select[0]) + len(select[1])
-            if length < min_length:
-                min_length = length
-                best_step = select
-                best_index = i
-        self.current_sol = best_index
-        best_step = [list(_) for _ in best_step]
-        [_.insert(0,len(_)) for _ in best_step]
-        
-        self.output = [[int(_y) for _y in _x] for _x in best_step]
         return None
 
 class sand_drawer:
-    arm_length = [90,90]
-    max_step = 2000
+    rander_pulse = 20000
+    arm_length = [1000,1000]
+    max_step = STEP_PER_ROUND
     send_length = 2048
     motor_count = 2
     epsilon=1.0 # epsilon �V�p�V���
-    image_size = 1024   
+    image_size = 4096   
+    velocity = 100 #pixel/s
     def __init__(self , _image_path:str):
         self.image = cv2.resize(cv2.imread(f"{os.getcwd()}/input/{_image_path}"), (sand_drawer.image_size, sand_drawer.image_size), interpolation=cv2.INTER_NEAREST)
         self.circle_border()
@@ -210,7 +70,7 @@ class sand_drawer:
         return np.array(combined, dtype=np.int32).tobytes()
     def test(self):
         self.image = np.ones((sand_drawer.image_size, sand_drawer.image_size, 3), dtype=np.uint8) * 255
-        cv2.line(self.image, (sand_drawer.image_size // 2, 0), (sand_drawer.image_size // 2, sand_drawer.image_size), (0, 0, 0), 1)
+        cv2.line(self.image, (sand_drawer.image_size // 2, 500), (sand_drawer.image_size // 2, sand_drawer.image_size-500), (0, 0, 0), 1)
         self.circle_border()
         return None
     def preview(self):
@@ -218,11 +78,12 @@ class sand_drawer:
         for _pack in self.lines:
             cv2.line(preview, tuple(_pack[0].astype(int)), tuple(_pack[1].astype(int)), (0, 0, 0), 1)
         height, width = preview.shape[:2]
-        radius = int(sand_drawer.max_step/4)
+        radius = int(sand_drawer.max_step)
         center = (int(width / 2), int(height / 2))
-        cv2.circle(preview, center, radius, (0, 0, 255), 1)
+        cv2.circle(preview, center, radius, (0, 0, 255), 2)
+        out = cv2.resize(preview, (512, 512), interpolation=cv2.INTER_NEAREST)
 
-        cv2.imshow("Line Preview", preview)
+        cv2.imshow("Line Preview", out)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         return None
@@ -242,39 +103,107 @@ class sand_drawer:
     def circle_border(self):
         mask = np.zeros((sand_drawer.image_size, sand_drawer.image_size), dtype=np.uint8)
         center = (sand_drawer.image_size // 2, sand_drawer.image_size // 2)
-        radius = int(sand_drawer.max_step / 4) - 5
+        radius = int(sand_drawer.arm_length[0] + sand_drawer.arm_length[1]) - 5
         cv2.circle(mask, center, radius, 255, -1) 
         white_bg = np.ones_like(self.image, dtype=np.uint8) * 255
         self.image = np.where(mask[:, :, None] == 255, self.image, white_bg)
         return None
     def convert(self):
-        calculator = coordinate(0)
-        calculator.x = calculator.t
-        calculator.gen_function()
+        def initial_turn():
+            turn_direction = -1
+            vector = self.lines[0][1] - self.lines[0][0]
+            facing = int(np.arctan2(vector[1], vector[0]) *(STEP_PER_ROUND//2) / np.pi)
+            self.data.append([[facing] + [ turn_direction * self.rander_pulse] * facing,[facing] + [turn_direction * self.rander_pulse] * facing])
+            axis.position += facing * turn_direction
+            arm.position += facing * turn_direction
+            return None
+        def clostest_time_old(_start , _end , x_p,y_p):
+            distance = np.linalg.norm(_start - _end)
+            x1 = (_end[0] - _start[0]) / (distance * self.velocity)
+            x2 = _start[0]
+            y1 = (_end[1] - _start[1]) / (distance * self.velocity)
+            y2 = _start[1]
+            t_min_u = x1 *x_p + y1 * y_p - x1 * x2 - y1 * y2
+            t_min_d = x1 * x1 + y1 * y1
+            d_min_u = abs(x1*y2 - x2*y1 - x1*y_p + x_p*y1)
+            d_min_d = math.sqrt(t_min_d)
+            t_min = t_min_u / t_min_d
+            d_min = d_min_u / d_min_d
+            return t_min, d_min
+        def clostest_time(_start, _end, x_p, y_p):
+            v = _end - _start
+            distance = np.linalg.norm(v)
+
+            # 單位速度向量
+            v_unit = v / (distance * self.velocity)
+            x1, y1 = v_unit
+            x2, y2 = _start
+
+            # 計算最近時間點 (投影公式)
+            t_min_numer = x1 * x_p + y1 * y_p - x1 * x2 - y1 * y2
+            t_min_denom = x1 * x1 + y1 * y1
+            t_min = t_min_numer / t_min_denom
+
+            # 最短距離 (叉積法)
+            dx = _end[0] - _start[0]
+            dy = _end[1] - _start[1]
+            px = x_p - _start[0]
+            py = y_p - _start[1]
+            cross = abs(dx * py - dy * px)
+            d_min = cross / np.hypot(dx, dy)
+
+            return t_min, d_min
+        def kinematics(theta1,theta2):
+            theta1 = theta1 * np.pi / int(sand_drawer.max_step //2 )
+            theta2 = theta2 * np.pi / int(sand_drawer.max_step //2 )
+            x = sand_drawer.arm_length[0] * cos(theta1) + sand_drawer.arm_length[1] * cos(theta2)
+            y = sand_drawer.arm_length[0] * sin(theta1) + sand_drawer.arm_length[1] * sin(theta2)
+            return np.array([x,y])
+        axis = stepper_helper(0)
+        arm = stepper_helper(STEP_PER_ROUND//2)
         self.data = []
-        def inverse_kinematics_all(x, y):
-            L1 = 1000
-            L2 = 1000
-            D = np.hypot(x, y)
+        initial_turn()
+        now_coordinate = axis + arm
+        offset = sand_drawer.image_size//2
+        if self.lines[0][0][0] != int(now_coordinate[0] + offset) or self.lines[0][0][1] != int(now_coordinate[1] + offset):
+            raise ValueError(f"{self.lines[0][0][0]} != {int(now_coordinate[0] + offset)} or {self.lines[0][0][1]} != {int(now_coordinate[1] + offset)} : initial coordinate is different.")
+        for i,lines in enumerate(self.lines):
+            current_time = 0
+            start_point = lines[0] - offset
+            end_point = lines[1] - offset
+            choose = [(0,1,1),(1,1,0),(2,1,-1),(3,0,1),(4,0,-1),(5,-1,1),(6,-1,0),(7,-1,-1)]
+            while True:
+                min_distance = np.inf
+                chosen = 0
+                time_at = 0
+                for at,add1,add2 in choose:
+                    axis_position = axis.position + add1
+                    arm_position = arm.position + add2
+                    coord = kinematics(axis_position , arm_position)
+                    t_min , d_min = clostest_time(start_point , end_point , coord[0] , coord[1])
+                    if d_min < min_distance and (t_min - current_time) > 0:
+                        min_distance = d_min
+                        chosen = at
+                        time_at = t_min - current_time
+                        if time_at == 0 or time_at == 0.0:
+                            time_at = np.inf
 
-            if D > (L1 + L2):
-                return None 
-
-            cos_angle2 = (D**2 - L1**2 - L2**2) / (2 * L1 * L2)
-            cos_angle2 = np.clip(cos_angle2, -1.0, 1.0)
-            angle2_1 = np.arccos(cos_angle2)
-            k1 = L1 + L2 * np.cos(angle2_1)
-            k2 = L2 * np.sin(angle2_1)
-            angle1_1 = np.arctan2(y, x) - np.arctan2(k2, k1)
-            angle2_2 = -angle2_1
-            k1 = L1 + L2 * np.cos(angle2_2)
-            k2 = L2 * np.sin(angle2_2)
-            angle1_2 = np.arctan2(y, x) - np.arctan2(k2, k1)
-
-            return np.array([[angle1_1, angle2_1], [angle1_2, angle2_2]])
-        for lines in self.lines:
-            calculator.convert(lines)
-            self.data.append(calculator.output)
+                current_time += time_at
+                axis.move(choose[chosen][1] * time_at)
+                arm.move(choose[chosen][2] * time_at)
+                current_coordinate = axis + arm
+                current_coordinate = [int(current_coordinate[0]) , int(current_coordinate[1])]
+                if current_coordinate[0] == end_point[0] and current_coordinate[1] == end_point[1]:
+                    break
+            axis_data = axis.output
+            arm_data = arm.output
+            min_value = min(axis_data + arm_data , key=abs)
+            max_value = max(axis_data + arm_data , key=abs)
+            axis_output = [int(_ + sand_drawer.rander_pulse) for _ in axis_data]
+            arm_output = [int(_ + sand_drawer.rander_pulse) for _ in arm_data]
+            axis_output.insert(0,len(axis_output))
+            arm_output.insert(0,len(arm_output))
+            self.data.append([axis_output , arm_output])
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
@@ -381,7 +310,7 @@ class sand_drawer:
         self.lines = get_sorted_path_by_linesorter(contours)
         return None
     def save_pulse(self , fle_name:str):
-        text = "@".join(["+".join(["-".join([str(_z) for _z in _y]) for _y in _x]) for _x in self.data])
+        text = "@".join(["+".join(["/".join([str(_z) for _z in _y]) for _y in _x]) for _x in self.data])
         f = open(f"{os.getcwd()}/output/{fle_name}.txt" , "w")
         f.write(text)
         f.close()
@@ -391,11 +320,11 @@ class sand_drawer:
         text = f.read()
         f.close()
         
-        self.data = [[[int(_z) for _z in _y.split("-") if _z != ""] for _y in _x.split("+")] for _x in text.split("@")]
+        self.data = [[[int(_z) for _z in _y.split("/") if _z != ""] for _y in _x.split("+")] for _x in text.split("@")]
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
 
-New_graph = False
+New_graph = True
 if __name__ == "__main__":
     graph = sand_drawer("anon.jpg")
     if New_graph:
@@ -407,6 +336,7 @@ if __name__ == "__main__":
         graph.save_pulse( "line" )
     else:
         graph.load_pulse( "line" )
+    print("sending")
     graph.send()
 
 
