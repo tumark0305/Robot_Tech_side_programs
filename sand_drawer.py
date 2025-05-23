@@ -233,9 +233,17 @@ class sand_drawer:
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
+        preview_size = 512
+        stepper_length = 100
         from sand_drawer_simulation import stepper
         axis = stepper(0)
         arm = stepper(simulation.max_step//2)
+        axis.length = stepper_length
+        arm.length = stepper_length
+        image = np.zeros((preview_size,preview_size))
+        center = (preview_size // 2, preview_size // 2)
+        radius = stepper_length + stepper_length
+        cv2.circle(image, center, radius, 255, 1) 
         pbar = tqdm(total=len(self.send_data), desc="Sending")
         while self.iterator<len(self.send_data):
             frame_bytes = self.send_data[self.iterator] 
@@ -263,16 +271,16 @@ class sand_drawer:
                                 elif axis.next_pulse_time == arm.next_pulse_time:
                                     axis.move()
                                     arm.move()
-                                coordinate = axis.real_coordinate() + arm.real_coordinate() + simulation.image_size//2
-                                self.image[int(coordinate[1]),int(coordinate[0])] = 255
-                            cv2.imshow("Print Viewer", self.image)
-                            cv2.waitKey(0)
+                                coordinate = axis.real_coordinate() + arm.real_coordinate() + preview_size//2
+                                image[int(coordinate[1]),int(coordinate[0])] = 255
+                            cv2.imshow("Print Viewer", cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE))
+                            cv2.waitKey(1)
                             break
                         else:
                             time.sleep(1)
                     except socket.timeout:
                         print("Timeout ESP32")
-                        s.close()
+                        # s.close()
                         break
             except Exception as e:
                 print(f"{e}")
@@ -371,7 +379,7 @@ class sand_drawer:
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
 
-New_graph = True
+New_graph = False
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
     graph = sand_drawer("anon.jpg")
@@ -382,16 +390,14 @@ if __name__ == "__main__":
         graph.preview()
         graph.convert()
         graph.save_pulse( "line" )
+        sim = simulation("line")
+        sim.data = graph.data
+        sim.run()
+        sim.print_result()
+        sim.save()
     else:
         graph.load_pulse( "line" )
     print("sending")
-    sim = simulation("line")
-    sim.data = graph.data
-    sim.run()
-    sim.print_result()
-    sim.save()
-
-
     graph.send()
 
 
