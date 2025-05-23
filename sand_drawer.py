@@ -171,7 +171,7 @@ class sand_drawer:
         offset = sand_drawer.image_size//2
         if self.lines[0][0][0] != int(now_coordinate[0] + offset) or self.lines[0][0][1] != int(now_coordinate[1] + offset):
             raise ValueError(f"{self.lines[0][0][0]} != {int(now_coordinate[0] + offset)} or {self.lines[0][0][1]} != {int(now_coordinate[1] + offset)} : initial coordinate is different.")
-        for i,lines in enumerate(self.lines):
+        for i,lines in tqdm(enumerate(self.lines) , desc=f"Fitting points "):
             axis.output = []
             arm.output = []
             current_time = 0
@@ -181,7 +181,7 @@ class sand_drawer:
             while True:
                 min_distance = np.inf
                 chosen = 0
-                time_at = 0
+                time_at = None
                 data_pack = []
                 for at,add1,add2 in choose:
                     axis_position = axis.position + add1
@@ -193,6 +193,15 @@ class sand_drawer:
                         min_distance = d_min
                         chosen = at
                         time_at = t_min - current_time
+                if time_at is None:
+                    min_distance = np.inf
+                    chosen = 0
+                    for pack in data_pack:
+                        if pack[2] < min_distance:
+                            min_distance = pack[2]
+                            chosen = pack[0]
+                            time_at = pack[1]
+
                 current_time += time_at
                 time_at = time_at * 1e6
                 if time_at < sand_drawer.pulse_range[0] or time_at > sand_drawer.pulse_range[1]:
@@ -224,11 +233,15 @@ class sand_drawer:
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
+        from sand_drawer_simulation import stepper
+        axis = stepper(0)
+        arm = stepper(simulation.max_step//2)
+        pbar = tqdm(total=len(self.send_data), desc="Sending")
         while self.iterator<len(self.send_data):
             frame_bytes = self.send_data[self.iterator] 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(240)  
+                s.settimeout(600)  
                 s.connect((esp32_ip, port))
                 while True:
                     try:
@@ -237,16 +250,31 @@ class sand_drawer:
                             s.sendall(frame_bytes)
                             s.close()
                             self.iterator += 1
-                            print("byte sent")
+                            pbar.update(1)
+
+                            line = self.data[self.iterator]
+                            axis.feed_data(line[0][1:line[0][0]+1])
+                            arm.feed_data(line[1][1:line[1][0]+1])
+                            while not(axis.finish) or not(arm.finish):
+                                if axis.next_pulse_time < arm.next_pulse_time:
+                                    axis.move()
+                                elif axis.next_pulse_time > arm.next_pulse_time:
+                                    arm.move()
+                                elif axis.next_pulse_time == arm.next_pulse_time:
+                                    axis.move()
+                                    arm.move()
+                                coordinate = axis.real_coordinate() + arm.real_coordinate() + simulation.image_size//2
+                                self.image[int(coordinate[1]),int(coordinate[0])] = 255
                             break
                         else:
-                            time.sleep(0.03)
+                            time.sleep(1)
                     except socket.timeout:
                         print("Timeout ESP32")
                         s.close()
                         break
             except Exception as e:
                 print(f"{e}")
+                continue
         return None
     def find_path(self):
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)

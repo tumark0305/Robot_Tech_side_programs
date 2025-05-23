@@ -1,6 +1,7 @@
 import os,cv2
 import numpy as np
 from math import cos, sin
+from tqdm import tqdm
 
 class stepper:
     length = 250
@@ -30,8 +31,12 @@ class stepper:
     def feed_data(self,data):
         self.data = data
         self.iterator = 0
-        self.finish = False
-        self.next_pulse_time = abs(data[0]) * 1e-6
+        if data != []:
+            self.next_pulse_time = abs(data[0]) * 1e-6
+            self.finish = False
+        else:
+            self.next_pulse_time = np.inf
+            self.finish = True
         self.run_time = 0
         return None
     def real_coordinate(self):
@@ -88,15 +93,9 @@ class simulation:
         cv2.waitKey(0)
         return None
     def run(self):
-        def convert(axis,arm):
-            theta1 = axis * np.pi / int(simulation.max_step //2)
-            theta2 = arm * np.pi / int(simulation.max_step //2) 
-            x = simulation.axis_length * cos(theta1) + simulation.arm_length * cos(theta2) + simulation.image_size//2
-            y = simulation.axis_length * sin(theta1) + simulation.arm_length * sin(theta2) + simulation.image_size//2
-            return np.array([int(x),int(y)])
         axis = stepper(0)
         arm = stepper(simulation.max_step//2)
-        for line in self.data:
+        for line in tqdm(self.data):
             axis.feed_data(line[0][1:line[0][0]+1])
             arm.feed_data(line[1][1:line[1][0]+1])
             while not(axis.finish) or not(arm.finish):
@@ -107,12 +106,11 @@ class simulation:
                 elif axis.next_pulse_time == arm.next_pulse_time:
                     axis.move()
                     arm.move()
-                #if 0 <= coordinate[0] < simulation.image_size and 0 <= coordinate[1] < simulation.image_size:
                 coordinate = axis.real_coordinate() + arm.real_coordinate() + simulation.image_size//2
                 self.image[int(coordinate[1]),int(coordinate[0])] = 255
                 #self.frame.append(self.image.copy())
-                self.frame_time.append(arm.run_time)
-            self.frame.append(self.image.copy())
+                #self.frame_time.append(arm.run_time)
+            #self.frame.append(self.image.copy())
 
         return None
     def save(self):
@@ -124,5 +122,5 @@ if __name__ == "__main__":
     graph.run()
     graph.print_result()
     graph.save()
-    graph.read_framebyframe()
+    #graph.read_framebyframe()
 
