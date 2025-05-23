@@ -17,9 +17,9 @@ class stepper:
             pulse = self.data[self.iterator]
             self.run_time += abs(pulse * 1e-6)
             if pulse<0:
-                self.position += 1
-            else:
                 self.position -= 1
+            else:
+                self.position += 1
             self.iterator += 1
             if self.iterator  >= len(self.data):
                 self.next_pulse_time = np.inf
@@ -89,10 +89,10 @@ class simulation:
         return None
     def run(self):
         def convert(axis,arm):
-            theta1 = axis * np.pi / int(simulation.max_step /2)
-            theta2 = arm * np.pi / int(simulation.max_step /2) 
-            x = simulation.axis_length * cos(theta1) + simulation.arm_length * cos(theta2) + int(simulation.image_size/2)
-            y = simulation.axis_length * sin(theta1) + simulation.arm_length * sin(theta2) + int(simulation.image_size/2)
+            theta1 = axis * np.pi / int(simulation.max_step //2)
+            theta2 = arm * np.pi / int(simulation.max_step //2) 
+            x = simulation.axis_length * cos(theta1) + simulation.arm_length * cos(theta2) + simulation.image_size//2
+            y = simulation.axis_length * sin(theta1) + simulation.arm_length * sin(theta2) + simulation.image_size//2
             return np.array([int(x),int(y)])
         axis = stepper(0)
         arm = stepper(simulation.max_step//2)

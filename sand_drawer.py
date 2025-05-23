@@ -24,6 +24,7 @@ class stepper_helper:
         self.position = initial_pos
         self.run_time = 0
         self.output = []
+        self.delay_time = 0
     def coordinate(self):
         theta = self.position /(self.max_step//2) * np.pi
         output = [self.length * cos(theta) , self.length * sin(theta)]
@@ -32,18 +33,23 @@ class stepper_helper:
         if not isinstance(other, stepper_helper):
             return NotImplemented
         return self.coordinate() + other.coordinate()
-    def move(self , time_step:int):
-        if time_step != 0:
-            self.run_time += abs(time_step)
-            self.output.append(time_step)
-            if time_step<0:
-                self.position -= 1
-            else:
-                self.position += 1
-
+    def delay(self,delay_time):
+        self.delay_time += abs(delay_time)
+        return None
+    def move(self , direction:int ,time_step):
+        if direction != 0:
+            next_pulse = abs(time_step) + self.delay_time
+            next_pulse = next_pulse * direction
+            self.run_time += abs(next_pulse)
+            self.output.append(next_pulse)
+            self.position += direction
+            self.delay_time = 0
+        else:
+            self.delay_time += abs(time_step)
         return None
 
 class sand_drawer:
+    pulse_range = (1000,50000)
     rander_pulse = 20000
     arm_length = [1000,1000]
     max_step = STEP_PER_ROUND
@@ -51,7 +57,7 @@ class sand_drawer:
     motor_count = 2
     epsilon=1.0 # epsilon �V�p�V���
     image_size = 4096   
-    velocity = 100 #pixel/s
+    velocity = 10 #pixel/s
     def __init__(self , _image_path:str):
         self.image = cv2.resize(cv2.imread(f"{os.getcwd()}/input/{_image_path}"), (sand_drawer.image_size, sand_drawer.image_size), interpolation=cv2.INTER_NEAREST)
         self.circle_border()
@@ -112,12 +118,12 @@ class sand_drawer:
         def initial_turn():
             turn_direction = -1
             vector = self.lines[0][1] - self.lines[0][0]
-            facing = int(np.arctan2(vector[1], vector[0]) *(STEP_PER_ROUND//2) / np.pi)
+            facing = int(np.arctan2(vector[1], vector[0]) *(STEP_PER_ROUND//2) / np.pi) +1
             self.data.append([[facing] + [ turn_direction * self.rander_pulse] * facing,[facing] + [turn_direction * self.rander_pulse] * facing])
             axis.position += facing * turn_direction
             arm.position += facing * turn_direction
             return None
-        def clostest_time_old(_start , _end , x_p,y_p):
+        def clostest_time_n(_start , _end , x_p,y_p):
             distance = np.linalg.norm(_start - _end)
             x1 = (_end[0] - _start[0]) / (distance * self.velocity)
             x2 = _start[0]
@@ -129,13 +135,11 @@ class sand_drawer:
             d_min_d = math.sqrt(t_min_d)
             t_min = t_min_u / t_min_d
             d_min = d_min_u / d_min_d
-            return t_min, d_min
+            return t_min, d_min#old
         def clostest_time(_start, _end, x_p, y_p):
             v = _end - _start
-            distance = np.linalg.norm(v)
-
             # 單位速度向量
-            v_unit = v / distance * self.velocity
+            v_unit = v * self.velocity / np.linalg.norm(v)
             x1, y1 = v_unit
             x2, y2 = _start
 
@@ -152,7 +156,7 @@ class sand_drawer:
             cross = abs(dx * py - dy * px)
             d_min = cross / np.hypot(dx, dy)
 
-            return t_min, d_min
+            return t_min, d_min#gpt
         def kinematics(theta1,theta2):
             theta1 = theta1 * np.pi / int(sand_drawer.max_step //2 )
             theta2 = theta2 * np.pi / int(sand_drawer.max_step //2 )
@@ -168,6 +172,8 @@ class sand_drawer:
         if self.lines[0][0][0] != int(now_coordinate[0] + offset) or self.lines[0][0][1] != int(now_coordinate[1] + offset):
             raise ValueError(f"{self.lines[0][0][0]} != {int(now_coordinate[0] + offset)} or {self.lines[0][0][1]} != {int(now_coordinate[1] + offset)} : initial coordinate is different.")
         for i,lines in enumerate(self.lines):
+            axis.output = []
+            arm.output = []
             current_time = 0
             start_point = lines[0] - offset
             end_point = lines[1] - offset
@@ -176,36 +182,40 @@ class sand_drawer:
                 min_distance = np.inf
                 chosen = 0
                 time_at = 0
+                data_pack = []
                 for at,add1,add2 in choose:
                     axis_position = axis.position + add1
                     arm_position = arm.position + add2
                     coord = kinematics(axis_position , arm_position)
                     t_min , d_min = clostest_time(start_point , end_point , coord[0] , coord[1])
-                    if d_min < min_distance and (t_min - current_time) > 0:
+                    data_pack.append([at, t_min - current_time , d_min])
+                    if d_min < min_distance and sand_drawer.pulse_range[1] >(t_min - current_time) > 0:
                         min_distance = d_min
                         chosen = at
                         time_at = t_min - current_time
-                        # if time_at == 0 or time_at == 0.0:
-                        #     time_at = np.inf  sand_drawer.rander_pulse
-
                 current_time += time_at
-                if time_at == 0 or time_at == 0.0:
-                    pass
-                axis.move(choose[chosen][1] * time_at)
-                arm.move(choose[chosen][2] * time_at)
+                time_at = time_at * 1e6
+                if time_at < sand_drawer.pulse_range[0] or time_at > sand_drawer.pulse_range[1]:
+                    time_at = sand_drawer.rander_pulse
+
+                axis.move(choose[chosen][1] , time_at)
+                arm.move(choose[chosen][2] , time_at)
                 current_coordinate = axis + arm
                 #current_coordinate = [int(current_coordinate[0]) , int(current_coordinate[1])]
                 vec_target = end_point - start_point
                 vec_now = current_coordinate - start_point
-
+                if choose[chosen][1] == choose[chosen][2]:
+                    pass
                 if np.dot(vec_now, vec_target) >= np.dot(vec_target, vec_target):
                     break
-            axis_data = axis.output
-            arm_data = arm.output
+            axis_data = axis.output.copy()
+            arm_data = arm.output.copy()
             min_value = min(axis_data + arm_data , key=abs)
             max_value = max(axis_data + arm_data , key=abs)
-            axis_output = [int(_/min_value) for _ in axis_data]
-            arm_output = [int(_/min_value) for _ in arm_data]
+            if abs(min_value)<sand_drawer.pulse_range[0] or abs(max_value)>sand_drawer.pulse_range[1]:
+                print(f"{min_value = } | {max_value = } \n expect: {sand_drawer.pulse_range[0] = } | {sand_drawer.pulse_range[1] = }")
+            axis_output = [int(_) for _ in axis_data]
+            arm_output = [int(_) for _ in arm_data]
             if any([_ == 0 for _ in axis_output] + [_ == 0 for _ in arm_output]):
                 raise ValueError(f"zero in pulse")
             axis_output.insert(0,len(axis_output))
@@ -218,7 +228,7 @@ class sand_drawer:
             frame_bytes = self.send_data[self.iterator] 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(3)  
+                s.settimeout(240)  
                 s.connect((esp32_ip, port))
                 while True:
                     try:
@@ -332,10 +342,11 @@ class sand_drawer:
         return None
 
 New_graph = True
+from sand_drawer_simulation import simulation
 if __name__ == "__main__":
     graph = sand_drawer("anon.jpg")
     if New_graph:
-        graph.test()
+        #graph.test()
         graph.get_line()
         graph.find_path()
         graph.preview()
@@ -344,6 +355,13 @@ if __name__ == "__main__":
     else:
         graph.load_pulse( "line" )
     print("sending")
+    sim = simulation("line")
+    sim.data = graph.data
+    sim.run()
+    sim.print_result()
+    sim.save()
+
+
     graph.send()
 
 
