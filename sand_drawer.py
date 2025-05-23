@@ -265,6 +265,8 @@ class sand_drawer:
                                     arm.move()
                                 coordinate = axis.real_coordinate() + arm.real_coordinate() + simulation.image_size//2
                                 self.image[int(coordinate[1]),int(coordinate[0])] = 255
+                            cv2.imshow("Print Viewer", self.image)
+                            cv2.waitKey(0)
                             break
                         else:
                             time.sleep(1)
