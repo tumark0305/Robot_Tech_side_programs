@@ -382,22 +382,23 @@ class sand_drawer:
 New_graph = False
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
-    graph = sand_drawer("anon.jpg")
+    input_file = "anon"
+    graph = sand_drawer(f"{input_file}.jpg")
     if New_graph:
         #graph.test()
         graph.get_line()
         graph.find_path()
         graph.preview()
         graph.convert()
-        graph.save_pulse( "line" )
-        sim = simulation("line")
+        graph.save_pulse( input_file )
+        sim = simulation(input_file)
         sim.data = graph.data
         sim.run()
         sim.print_result()
         sim.save()
     else:
-        graph.load_pulse( "line" )
-    print("sending")
+        graph.load_pulse( input_file )
+    print(input_file)
     graph.send()
 
 
