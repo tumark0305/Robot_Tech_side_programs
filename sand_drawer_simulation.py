@@ -108,7 +108,7 @@ class simulation:
                     axis.move()
                     arm.move()
                 #if 0 <= coordinate[0] < simulation.image_size and 0 <= coordinate[1] < simulation.image_size:
-                coordinate = axis.real_coordinate() + arm.real_coordinate() + + int(simulation.image_size/2)
+                coordinate = axis.real_coordinate() + arm.real_coordinate() + simulation.image_size//2
                 self.image[int(coordinate[1]),int(coordinate[0])] = 255
                 #self.frame.append(self.image.copy())
                 self.frame_time.append(arm.run_time)

@@ -135,7 +135,7 @@ class sand_drawer:
             distance = np.linalg.norm(v)
 
             # 單位速度向量
-            v_unit = v / (distance * self.velocity)
+            v_unit = v / distance * self.velocity
             x1, y1 = v_unit
             x2, y2 = _start
 
@@ -185,22 +185,29 @@ class sand_drawer:
                         min_distance = d_min
                         chosen = at
                         time_at = t_min - current_time
-                        if time_at == 0 or time_at == 0.0:
-                            time_at = np.inf
+                        # if time_at == 0 or time_at == 0.0:
+                        #     time_at = np.inf  sand_drawer.rander_pulse
 
                 current_time += time_at
+                if time_at == 0 or time_at == 0.0:
+                    pass
                 axis.move(choose[chosen][1] * time_at)
                 arm.move(choose[chosen][2] * time_at)
                 current_coordinate = axis + arm
-                current_coordinate = [int(current_coordinate[0]) , int(current_coordinate[1])]
-                if current_coordinate[0] == end_point[0] and current_coordinate[1] == end_point[1]:
+                #current_coordinate = [int(current_coordinate[0]) , int(current_coordinate[1])]
+                vec_target = end_point - start_point
+                vec_now = current_coordinate - start_point
+
+                if np.dot(vec_now, vec_target) >= np.dot(vec_target, vec_target):
                     break
             axis_data = axis.output
             arm_data = arm.output
             min_value = min(axis_data + arm_data , key=abs)
             max_value = max(axis_data + arm_data , key=abs)
-            axis_output = [int(_ + sand_drawer.rander_pulse) for _ in axis_data]
-            arm_output = [int(_ + sand_drawer.rander_pulse) for _ in arm_data]
+            axis_output = [int(_/min_value) for _ in axis_data]
+            arm_output = [int(_/min_value) for _ in arm_data]
+            if any([_ == 0 for _ in axis_output] + [_ == 0 for _ in arm_output]):
+                raise ValueError(f"zero in pulse")
             axis_output.insert(0,len(axis_output))
             arm_output.insert(0,len(arm_output))
             self.data.append([axis_output , arm_output])
