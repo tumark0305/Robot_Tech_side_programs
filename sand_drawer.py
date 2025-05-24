@@ -49,18 +49,17 @@ class stepper_helper:
         return None
 
 class sand_drawer:
-    pulse_range = (1000,50000)
+    pulse_range = (1000,10000)
     rander_pulse = 20000
     arm_length = [1000,1000]
     max_step = STEP_PER_ROUND
     send_length = 2048
     motor_count = 2
-    epsilon=1.0 # epsilon �V�p�V���
+    epsilon=0.8 # epsilon �V�p�V���
     image_size = 4096   
     velocity = 10 #pixel/s
     def __init__(self , _image_path:str):
-        self.image = cv2.resize(cv2.imread(f"{os.getcwd()}/input/{_image_path}"), (sand_drawer.image_size, sand_drawer.image_size), interpolation=cv2.INTER_NEAREST)
-        self.circle_border()
+        _image_path = f"{os.getcwd()}/input/{_image_path}"
         self.lines = []
         self.data = [
             ([2000] + [20000]*2000,
@@ -68,6 +67,11 @@ class sand_drawer:
         ]
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         self.iterator = 0
+        if os.path.exists(_image_path):
+            self.image = cv2.resize(cv2.imread(_image_path), (sand_drawer.image_size, sand_drawer.image_size), interpolation=cv2.INTER_NEAREST)
+            self.circle_border()
+        else:
+            self.test()
     @staticmethod
     def to_send(axisdata: list[int], armdata: list[int]):
         axis = list(axisdata) + [0] * (sand_drawer.send_length - len(axisdata))
@@ -76,7 +80,22 @@ class sand_drawer:
         return np.array(combined, dtype=np.int32).tobytes()
     def test(self):
         self.image = np.ones((sand_drawer.image_size, sand_drawer.image_size, 3), dtype=np.uint8) * 255
-        cv2.line(self.image, (sand_drawer.image_size // 2, 500), (sand_drawer.image_size // 2, sand_drawer.image_size-500), (0, 0, 0), 1)
+        h = sand_drawer.image_size
+        w = sand_drawer.image_size
+        center = (w // 2, h // 2)
+        side = 3000  # 三角形邊長
+        height = int((3**0.5 / 2) * side)
+
+        # 正三角形三個頂點（頂點朝上）
+        pt1 = (center[0], center[1] - height // 2)  # 上
+        pt2 = (center[0] - side // 2, center[1] + height // 2)  # 左下
+        pt3 = (center[0] + side // 2, center[1] + height // 2)  # 右下
+
+        # 繪製三角形
+        cv2.line(self.image, pt1, pt2, (0, 0, 0), 1)
+        cv2.line(self.image, pt2, pt3, (0, 0, 0), 1)
+        cv2.line(self.image, pt3, pt1, (0, 0, 0), 1)
+
         self.circle_border()
         return None
     def preview(self):
@@ -116,10 +135,12 @@ class sand_drawer:
         return None
     def convert(self):
         def initial_turn():
+            
             turn_direction = -1
             vector = self.lines[0][1] - self.lines[0][0]
             facing = int(np.arctan2(vector[1], vector[0]) *(STEP_PER_ROUND//2) / np.pi) +1
-            self.data.append([[facing] + [ turn_direction * self.rander_pulse] * facing,[facing] + [turn_direction * self.rander_pulse] * facing])
+            turn_direction = turn_direction * facing / abs(facing)
+            self.data.append([[abs(facing)] + [ int(turn_direction * self.rander_pulse)] * abs(facing),[abs(facing)] + [int(turn_direction * self.rander_pulse)] * abs(facing)])
             axis.position += facing * turn_direction
             arm.position += facing * turn_direction
             return None
@@ -169,7 +190,8 @@ class sand_drawer:
         initial_turn()
         now_coordinate = axis + arm
         offset = sand_drawer.image_size//2
-        if self.lines[0][0][0] != int(now_coordinate[0] + offset) or self.lines[0][0][1] != int(now_coordinate[1] + offset):
+        distance_from_start = np.linalg.norm(self.lines[0][0] - now_coordinate - offset)
+        if  distance_from_start > 1.0:
             raise ValueError(f"{self.lines[0][0][0]} != {int(now_coordinate[0] + offset)} or {self.lines[0][0][1]} != {int(now_coordinate[1] + offset)} : initial coordinate is different.")
         for i,lines in tqdm(enumerate(self.lines) , desc=f"Fitting points "):
             axis.output = []
@@ -204,8 +226,10 @@ class sand_drawer:
 
                 current_time += time_at
                 time_at = time_at * 1e6
-                if time_at < sand_drawer.pulse_range[0] or time_at > sand_drawer.pulse_range[1]:
-                    time_at = sand_drawer.rander_pulse
+                if time_at < sand_drawer.pulse_range[0]:
+                    time_at = sand_drawer.pulse_range[0]
+                elif time_at > sand_drawer.pulse_range[1]:
+                    time_at = sand_drawer.pulse_range[1]
 
                 axis.move(choose[chosen][1] , time_at)
                 arm.move(choose[chosen][2] , time_at)
@@ -233,6 +257,8 @@ class sand_drawer:
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
+        self.data.insert(0,[[2147483647] + [0] , [2147483647] + [0]])
+        self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         preview_size = 512
         stepper_length = 100
         from sand_drawer_simulation import stepper
@@ -362,7 +388,8 @@ class sand_drawer:
 
             return [np.array([p1, p2]) for p1, p2 in path]
         print("running...")
-        self.lines = get_sorted_path_by_linesorter(contours)
+        approx = [cv2.approxPolyDP(cnt, sand_drawer.epsilon, False) for cnt in contours]
+        self.lines = get_sorted_path_by_linesorter(approx)
         return None
     def save_pulse(self , fle_name:str):
         text = "@".join(["+".join(["/".join([str(_z) for _z in _y]) for _y in _x]) for _x in self.data])
@@ -379,13 +406,12 @@ class sand_drawer:
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
 
-New_graph = False
+New_graph = True
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
-    input_file = "anon"
-    graph = sand_drawer(f"{input_file}.jpg")
+    input_file = "triangle"
+    graph = sand_drawer(f"{input_file}.png")
     if New_graph:
-        #graph.test()
         graph.get_line()
         graph.find_path()
         graph.preview()
@@ -398,6 +424,7 @@ if __name__ == "__main__":
         sim.save()
     else:
         graph.load_pulse( input_file )
+    
     print(input_file)
     graph.send()
 

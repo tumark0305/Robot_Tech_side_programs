@@ -30,6 +30,7 @@
     <Compile Include="sand_drawer.py" />
     <Compile Include="sand_drawer_simulation.py" />
     <Compile Include="send.py" />
+    <Compile Include="stepper_test.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="test.py" />
