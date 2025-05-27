@@ -10,12 +10,59 @@ from math import cos, sin
 from scipy.optimize import minimize_scalar
 from sympy import lambdify
 from copy import deepcopy
+import wave
+import numpy as np
 
 esp32_ip = "192.168.4.1"
 port = 80
 
 LENGTH = 1000
 STEP_PER_ROUND = 2000
+
+class music:
+    buffer_size = 6400
+    depth = 8
+    def __init__(self):
+        self.data = []
+        self.iterator = 0
+        self.send_bytedata = []
+    def read_wav(self,_file_path:str):
+        with wave.open(_file_path, 'rb') as wav:
+            n_channels = wav.getnchannels()
+            sampwidth = wav.getsampwidth()
+            framerate = wav.getframerate()
+            n_frames = wav.getnframes()
+
+            assert n_channels == 1, "只支援單聲道"
+            assert sampwidth in (1, 2), "只支援 8-bit 或 16-bit WAV"
+            self.depth = sampwidth * 8
+
+            raw_bytes = wav.readframes(n_frames)
+
+            # 將 byte 資料轉為 numpy array
+            if sampwidth == 1:
+                samples = np.frombuffer(raw_bytes, dtype=np.uint8)  # 8-bit: 0~255
+            elif sampwidth == 2:
+                samples = np.frombuffer(raw_bytes, dtype=np.int16)  # 16-bit: -32768~32767
+                samples = ((samples + 32768) >> 8).astype(np.uint8)  # 轉為 8-bit
+            total_len = len(samples)
+            print(f"{max(samples) = }    {min(samples)}")
+            _data = [samples[i:i + self.buffer_size-2].tolist()  for i in range(0, total_len, self.buffer_size-2)]
+            self.data = []
+            for block in _data:
+                length = len(block)  # length <= self.buffer_size - 2
+                high = (length >> 8) & 0xFF
+                low  = length & 0xFF
+                self.data.append([high, low] + block)
+            #self.send_bytedata = [np.array(_x,np.uint8).tobytes() for _x in self.data]
+        return None
+    def next_data(self):
+        #_output = self.send_bytedata[self.iterator]
+        _output = np.array(self.data[self.iterator],np.uint8).tobytes()
+        self.iterator += 1
+        if self.iterator >= len(self.data):
+            self.iterator = 0
+        return _output
 
 class stepper_helper:
     length = LENGTH
@@ -49,7 +96,7 @@ class stepper_helper:
         return None
 
 class sand_drawer:
-    pulse_range = (1000,10000)
+    pulse_range = (2500,25000)
     rander_pulse = 20000
     arm_length = [1000,1000]
     max_step = STEP_PER_ROUND
@@ -270,6 +317,8 @@ class sand_drawer:
         center = (preview_size // 2, preview_size // 2)
         radius = stepper_length + stepper_length
         cv2.circle(image, center, radius, 255, 1) 
+        audio = music()
+        audio.read_wav(f"{os.getcwd()}/output/NCS.wav")
         pbar = tqdm(total=len(self.send_data), desc="Sending")
         while self.iterator<len(self.send_data):
             frame_bytes = self.send_data[self.iterator] 
@@ -301,6 +350,10 @@ class sand_drawer:
                                 image[int(coordinate[1]),int(coordinate[0])] = 255
                             cv2.imshow("Print Viewer", cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE))
                             cv2.waitKey(1)
+                            break
+                        elif received.strip() == 'A':
+                            s.sendall(audio.next_data())
+                            s.close()
                             break
                         else:
                             time.sleep(1)
@@ -409,8 +462,19 @@ class sand_drawer:
 New_graph = True
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
-    input_file = "triangle"
-    graph = sand_drawer(f"{input_file}.png")
+    input_file = "rand1"
+    all_file = os.listdir(f"{os.getcwd()}/input")
+    for _picture in all_file:
+        graph = sand_drawer(_picture)
+        graph.get_line()
+        graph.find_path()
+        graph.convert()
+        graph.save_pulse( _picture.split(".")[0])
+        sim = simulation( _picture.split(".")[0])
+        sim.data = graph.data
+        sim.run()
+        sim.save()
+    graph = sand_drawer(f"{input_file}.jpg")
     if New_graph:
         graph.get_line()
         graph.find_path()
