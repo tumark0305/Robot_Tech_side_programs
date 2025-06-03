@@ -100,7 +100,7 @@ class sand_drawer:
     rander_pulse = 20000
     arm_length = [1000,1000]
     max_step = STEP_PER_ROUND
-    send_length = 1024
+    send_length = 2048
     motor_count = 2
     epsilon=0.8 # epsilon �V�p�V���
     image_size = 4096   
@@ -181,13 +181,14 @@ class sand_drawer:
         self.image = np.where(mask[:, :, None] == 255, self.image, white_bg)
         return None
     def convert(self):
+        _all_line_points = []
         def initial_turn():
             
             turn_direction = -1
             vector = self.lines[0][1] - self.lines[0][0]
             facing = int(np.arctan2(vector[1], vector[0]) *(STEP_PER_ROUND//2) / np.pi) +1
             turn_direction = turn_direction * facing / abs(facing)
-            self.data.append([[abs(facing)] + [ int(turn_direction * self.rander_pulse)] * abs(facing),[abs(facing)] + [int(turn_direction * self.rander_pulse)] * abs(facing)])
+            _all_line_points.append([[abs(facing)] + [ int(turn_direction * self.rander_pulse)] * abs(facing),[abs(facing)] + [int(turn_direction * self.rander_pulse)] * abs(facing)])
             axis.position += facing * turn_direction
             arm.position += facing * turn_direction
             return None
@@ -233,13 +234,15 @@ class sand_drawer:
             return np.array([x,y])
         axis = stepper_helper(0)
         arm = stepper_helper(STEP_PER_ROUND//2)
-        self.data = []
+        
         initial_turn()
         now_coordinate = axis + arm
         offset = sand_drawer.image_size//2
         distance_from_start = np.linalg.norm(self.lines[0][0] - now_coordinate - offset)
         if  distance_from_start > 1.0:
             raise ValueError(f"{self.lines[0][0][0]} != {int(now_coordinate[0] + offset)} or {self.lines[0][0][1]} != {int(now_coordinate[1] + offset)} : initial coordinate is different.")
+        axis_buffer = []
+        arm_buffer = []
         for i,lines in tqdm(enumerate(self.lines) , desc=f"Fitting points "):
             axis.output = []
             arm.output = []
@@ -298,13 +301,28 @@ class sand_drawer:
             arm_output = [int(_) for _ in arm_data]
             if any([_ == 0 for _ in axis_output] + [_ == 0 for _ in arm_output]):
                 raise ValueError(f"zero in pulse")
-            axis_output.insert(0,len(axis_output))
-            arm_output.insert(0,len(arm_output))
-            self.data.append([axis_output , arm_output])
+            if len(axis_output) >= sand_drawer.send_length or len(arm_output) >= sand_drawer.send_length:
+                raise ValueError(f"{len(axis_output) = },{len(arm_output) = } is larger than {sand_drawer.send_length}")
+            if len(axis_buffer) + len(axis_output) >=sand_drawer.send_length-1 or len(arm_buffer) + len(arm_output) >=sand_drawer.send_length-1:
+                axis_buffer.insert(0,len(axis_buffer))
+                arm_buffer.insert(0,len(arm_buffer))
+                _all_line_points.append([axis_buffer.copy() , arm_buffer.copy()])
+                axis_buffer = axis_output
+                arm_buffer = arm_output
+            else:
+                axis_buffer = axis_buffer + axis_output
+                arm_buffer = arm_buffer + arm_output
+            continue
+        axis_output.insert(0,len(axis_output))
+        arm_output.insert(0,len(arm_output))
+        _all_line_points.append([axis_output.copy() , arm_output.copy()])
+            
+        
+        self.data = _all_line_points
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         return None
     def send(self):
-        self.data.insert(0,[[2147483647] + [0] , [2147483647] + [0]])
+        #self.data.insert(0,[[2147483647] + [0] , [2147483647] + [0]])
         self.send_data = [sand_drawer.to_send(x,r) for x,r in self.data]
         preview_size = 512
         stepper_length = 100
@@ -463,19 +481,19 @@ class sand_drawer:
 New_graph = True
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
-    input_file = "soyo1"
+    input_file = "luca"
     all_file = os.listdir(f"{os.getcwd()}/input")
-    for _picture in all_file:
-        graph = sand_drawer(_picture)
-        graph.get_line()
-        graph.find_path()
-        graph.convert()
-        graph.save_pulse( _picture.split(".")[0])
-        sim = simulation( _picture.split(".")[0])
-        sim.data = graph.data
-        sim.run()
-        sim.save()
-    graph = sand_drawer(f"{input_file}.png")
+    # for _picture in all_file:
+    #     graph = sand_drawer(_picture)
+    #     graph.get_line()
+    #     graph.find_path()
+    #     graph.convert()
+    #     graph.save_pulse( _picture.split(".")[0])
+    #     sim = simulation( _picture.split(".")[0])
+    #     sim.data = graph.data
+    #     sim.run()
+    #     sim.save()
+    graph = sand_drawer(f"{input_file}.jpg")
     if New_graph:
         graph.get_line()
         graph.find_path()
