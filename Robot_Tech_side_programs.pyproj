@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>690d9afb-5392-41d8-b71f-d4d2be1a609a</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>sand_drawer.py</StartupFile>
+    <StartupFile>jpg2video.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -27,6 +27,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="convert.py" />
+    <Compile Include="jpg2video.py" />
     <Compile Include="sand_drawer.py" />
     <Compile Include="sand_drawer_simulation.py" />
     <Compile Include="send.py" />

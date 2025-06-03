@@ -6,6 +6,7 @@
 # User-specific files
 input/
 output/
+jpgs/
 *.rsuser
 *.suo
 *.user
@@ -84,6 +85,7 @@ StyleCopReport.xml
 *.ipdb
 *.pgc
 *.pgd
+*.mp4
 *.rsp
 *.sbr
 *.tlb
