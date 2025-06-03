@@ -96,11 +96,11 @@ class stepper_helper:
         return None
 
 class sand_drawer:
-    pulse_range = (2500,25000)
+    pulse_range = (2500,20000)
     rander_pulse = 20000
     arm_length = [1000,1000]
     max_step = STEP_PER_ROUND
-    send_length = 2048
+    send_length = 1024
     motor_count = 2
     epsilon=0.8 # epsilon �V�p�V���
     image_size = 4096   
@@ -368,7 +368,8 @@ class sand_drawer:
     def find_path(self):
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        #contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         def get_sorted_path_by_linesorter(contours):
             def dist(p1, p2):
                 return np.linalg.norm(np.array(p1) - np.array(p2))
@@ -462,7 +463,7 @@ class sand_drawer:
 New_graph = True
 from sand_drawer_simulation import simulation
 if __name__ == "__main__":
-    input_file = "rand1"
+    input_file = "soyo1"
     all_file = os.listdir(f"{os.getcwd()}/input")
     for _picture in all_file:
         graph = sand_drawer(_picture)
@@ -474,7 +475,7 @@ if __name__ == "__main__":
         sim.data = graph.data
         sim.run()
         sim.save()
-    graph = sand_drawer(f"{input_file}.jpg")
+    graph = sand_drawer(f"{input_file}.png")
     if New_graph:
         graph.get_line()
         graph.find_path()
